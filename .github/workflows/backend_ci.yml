@@ -128,9 +128,13 @@ jobs:
     # Login to Azure Container Registry (ACR)
     - name: Login to Azure Container Registry
       run: az acr login --name $ACR_NAME
+    
     - name: Resolve ACR login server
       run: echo "LOGIN_SERVER=$(az acr show -n $ACR_NAME --query loginServer -o tsv)" >> $GITHUB_ENV
-   
+
+    - name: Set ACR login server
+      run: echo "LOGIN_SERVER=${ACR_NAME}.azurecr.io" >> $GITHUB_ENV
+    
     # Build and Push Docker image for Product Service
     - name: Build and Push Product Service Image
       run: |
