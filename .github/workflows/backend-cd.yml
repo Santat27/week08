@@ -39,10 +39,30 @@ jobs:
         run: |
           az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
 
-      - name: Attach ACR
+      - name: Grant AcrPull to AKS kubelet identity (policy-safe)
         run: |
-          az aks update --name ${{ github.event.inputs.aks_cluster_name }} --resource-group ${{ github.event.inputs.aks_resource_group }} --attach-acr ${{ github.event.inputs.aks_acr_name }}
+         set -e
+         ACR_ID=$(az acr show -n ${{ inputs.aks_acr_name }} --query id -o tsv)
 
+         # Try Managed Identity (most AKS clusters)
+         KUBE_OID=$(az aks show \
+          -g ${{ inputs.aks_resource_group }} \
+          -n ${{ inputs.aks_cluster_name }} \
+          --query "identityProfile.kubeletidentity.objectId" -o tsv 2>/dev/null || true)
+
+         if [ -n "$KUBE_OID" ] && [ "$KUBE_OID" != "null" ]; then
+          echo "Granting AcrPull to kubelet identity: $KUBE_OID"
+          az role assignment create --assignee-object-id "$KUBE_OID" --role AcrPull --scope "$ACR_ID"
+         else
+          # Fallback: legacy SP-based cluster
+          SP_APPID=$(az aks show \
+           -g ${{ inputs.aks_resource_group }} \
+           -n ${{ inputs.aks_cluster_name }} \
+           --query "servicePrincipalProfile.clientId" -o tsv)
+          echo "Granting AcrPull to cluster SP: $SP_APPID"
+          az role assignment create --assignee "$SP_APPID" --role AcrPull --scope "$ACR_ID"
+         fi
+          
       - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
         run: |
           echo "Deploying backend infrastructure..."
