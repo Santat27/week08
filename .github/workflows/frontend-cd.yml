@@ -1,14 +1,11 @@
 # week08/.github/workflows/frontend-cd.yml
-
 name: CD - Deploy Frontend to AKS
 
-# This workflow can be called by other workflows and takes inputs.
-# Or it can be run manually if you provide the IPs.
 on:
   workflow_dispatch:
     inputs:
       product_api_ip:
-        description: 'External IP of Product Service'
+        description: 'External IP of Product Service (e.g., http://X.X.X.X:8000)'
         required: true
         default: 'http://<ip_address>:8000'
       order_api_ip:
@@ -51,17 +48,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Azure login using a Service Principal secret
+      # Azure login using Service Principal
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       # Login to Azure Container Registry (ACR)
-      - name: Login to Azure Container Registry
-        run: az acr login --name $ACR_NAME
-
-      - name: Login to Azure Container Registry
+      - name: Login to ACR
         run: az acr login --name $ACR_NAME
 
       - name: Resolve ACR login server
@@ -72,12 +66,10 @@ jobs:
         
       - name: Inject Backend IPs into Frontend main.js
         run: |
-          echo "Injecting IPs into frontend/static/js/main.js"
-          # Ensure frontend/main.js is directly in the path for sed
+          echo "Injecting IPs into frontend/main.js"
           sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
           sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
           
-          # Display the modified file content for debugging
           echo "--- Modified main.js content ---"
           cat frontend/main.js
           echo "---------------------------------"
@@ -103,10 +95,10 @@ jobs:
           elif [ -f frontend.yaml ]; then
             kubectl apply -f frontend.yaml
           else
-            echo "Could not find frontend manifest. Listing repo:"
-            pwd && ls -la && find . -maxdepth 3 -name "*front*.*y*ml" -o -name "k8s"
+            echo "Could not find frontend manifest. Listing repo contents:"
+            pwd && ls -la && find . -maxdepth 3 -name "*front*.*y*ml"
             exit 1
           fi
      
-      - name: Logout from Azure (AKS deployment)
+      - name: Logout from Azure
         run: az logout
