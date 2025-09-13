@@ -45,7 +45,8 @@ jobs:
     environment: Production
     env:
       ACR_NAME: week08acr
-
+      IMAGE_TAG: latest
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,14 +59,17 @@ jobs:
 
       # Login to Azure Container Registry (ACR)
       - name: Login to Azure Container Registry
-        run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+        run: az acr login --name $ACR_NAME
 
       - name: Login to Azure Container Registry
         run: az acr login --name $ACR_NAME
 
       - name: Resolve ACR login server
         run: echo "LOGIN_SERVER=$(az acr show -n $ACR_NAME --query loginServer -o tsv)" >> $GITHUB_ENV
- 
+
+      - name: Debug login server (optional)
+        run: echo "LOGIN_SERVER=$LOGIN_SERVER"
+        
       - name: Inject Backend IPs into Frontend main.js
         run: |
           echo "Injecting IPs into frontend/static/js/main.js"
@@ -81,10 +85,8 @@ jobs:
       # Build and Push Docker image for Frontend
       - name: Build and Push Frontend Image
         run: |
-          docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
-          docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
-          docker build -t $LOGIN_SERVER/frontend:latest ./frontend
-          docker push  $LOGIN_SERVER/frontend:latest
+          docker build -t $LOGIN_SERVER/frontend:$IMAGE_TAG ./frontend
+          docker push  $LOGIN_SERVER/frontend:$IMAGE_TAG
       
       - name: Set Kubernetes context (get AKS credentials)
         uses: azure/aks-set-context@v3
@@ -97,9 +99,9 @@ jobs:
           echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
           cd k8s/
           # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
+          kubectl apply -f frontend-cd.yaml
           cd k8s
-          kubectl apply -f frontend.yaml   # change filename if your manifest is different
+          kubectl apply -f frontend-cd.yaml   # change filename if your manifest is different
      
       - name: Logout from Azure (AKS deployment)
         run: az logout
