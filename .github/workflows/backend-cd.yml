@@ -77,8 +77,13 @@ jobs:
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
+          set -e
+          # apply one by one (make sure these files exist)
           kubectl apply -n $BACKEND_NS -f k8s/product-service.yaml
           kubectl apply -n $BACKEND_NS -f k8s/order-service.yaml
+
+      - name: List services in namespace (verify)
+        run: kubectl -n $BACKEND_NS get svc
       
       - name: Wait for Backend LoadBalancer IPs
         run: |
