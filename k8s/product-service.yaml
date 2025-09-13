@@ -1,9 +1,9 @@
 # week08/k8s/product-service.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: product-service-w08e1
+  namespace: week08                            # <— ADDED
   labels:
     app: product-service
 spec:
@@ -18,12 +18,11 @@ spec:
     spec:
       containers:
       - name: product-service-container
-        image: durgeshsamariya.azurecr.io/product_service:latest
+        image: week08acr.azurecr.io/product_service:latest   # <— UPDATED to your ACR
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
         env:
-        # Database connection details
         - name: POSTGRES_HOST
           value: product-db-service-w08e1
         - name: POSTGRES_DB
@@ -34,38 +33,39 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_USER
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: POSTGRES_PASSWORD
         - name: AZURE_STORAGE_ACCOUNT_NAME
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: AZURE_STORAGE_ACCOUNT_NAME
         - name: AZURE_STORAGE_ACCOUNT_KEY
           valueFrom:
             secretKeyRef:
-              name: ecomm-secrets-w08e1 # Secret name matches
+              name: ecomm-secrets-w08e1
               key: AZURE_STORAGE_ACCOUNT_KEY
         - name: AZURE_STORAGE_CONTAINER_NAME
           valueFrom:
             configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
+              name: ecomm-config-w08e1
               key: AZURE_STORAGE_CONTAINER_NAME
         - name: AZURE_SAS_TOKEN_EXPIRY_HOURS
           valueFrom:
             configMapKeyRef:
-              name: ecomm-config-w08e1 # ConfigMap name matches
+              name: ecomm-config-w08e1
               key: AZURE_SAS_TOKEN_EXPIRY_HOURS
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: product-service-w08e1
+  namespace: week08                            # <— ADDED
   labels:
     app: product-service
 spec:
@@ -75,4 +75,5 @@ spec:
     - protocol: TCP
       port: 8000
       targetPort: 8000
-  type: LoadBalancer
+  type: ClusterIP                               # <— CHANGED from LoadBalancer
+
