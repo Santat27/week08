@@ -76,11 +76,15 @@ jobs:
           echo "ORDER_DB_SERVICE=order-db-service-w08e1"     >> $GITHUB_ENV
 
       - name: Deploy Backend Microservices (Product, Order)
+        shell: bash
         run: |
-          set -e
-          # apply one by one (make sure these files exist)
-          kubectl apply -n $BACKEND_NS -f k8s/product-service.yaml
-          kubectl apply -n $BACKEND_NS -f k8s/order-service.yaml
+         set -e
+         # list files to confirm the path exists
+         ls -la
+         ls -la k8s || true
+
+         kubectl apply --namespace "$BACKEND_NS" --filename k8s/product-service.yaml
+         kubectl apply --namespace "$BACKEND_NS" --filename k8s/order-service.yaml
 
       - name: List services in namespace (verify)
         run: kubectl -n $BACKEND_NS get svc
