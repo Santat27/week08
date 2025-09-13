@@ -96,12 +96,17 @@ jobs:
 
       - name: Deploy Frontend to AKS
         run: |
-          echo "Deploying frontend with latest tag to AKS cluster: ${{ inputs.aks_cluster_name }}"
-          cd k8s/
-          # Ensure frontend-service.yaml is configured with your ACR
-          kubectl apply -f frontend.yaml
-          cd k8s
-          kubectl apply -f frontend.yaml   # change filename if your manifest is different
+          set -e
+          echo "Deploying frontend to AKS cluster: ${{ inputs.aks_cluster_name }}"
+          if [ -f k8s/frontend.yaml ]; then
+            kubectl apply -f k8s/frontend.yaml
+          elif [ -f frontend.yaml ]; then
+            kubectl apply -f frontend.yaml
+          else
+            echo "Could not find frontend manifest. Listing repo:"
+            pwd && ls -la && find . -maxdepth 3 -name "*front*.*y*ml" -o -name "k8s"
+            exit 1
+          fi
      
       - name: Logout from Azure (AKS deployment)
         run: az logout
