@@ -1,53 +1,55 @@
-# week08/.github/workflows/frontend_ci.yml
-
 name: Frontend CI - Build & Push Image
 
 on:
-  # Manual trigger
+  # Run on demand
   workflow_dispatch:
-
-  # Automatically on pushes to main branch
+    inputs:
+      acr_name:
+        description: 'Azure Container Registry NAME (no .azurecr.io)'
+        required: true
+        default: 'week08acr'
+  # And on code changes to the frontend
   push:
-    branches:
-      - main
-    paths: # Only trigger if changes are in the frontend directory
+    paths:
       - 'frontend/**'
-      - '.github/workflows/frontend_ci.yml' # Trigger if this workflow file changes
-
-# Define global environment variables that can be used across jobs
-env:
-  # ACR Login Server (e.g., myregistry.azurecr.io)
-  # This needs to be set as a GitHub Repository Secret
-  ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  # Dynamically generate image tags based on Git SHA and GitHub Run ID
-  # This provides unique, traceable tags for each image build
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+      - '.github/workflows/frontend-ci.yml'
 
 jobs:
-  build_and_push_frontend:
+  build_and_push:
     runs-on: ubuntu-latest
+    env:
+      # For manual runs this comes from the input.
+      # For push runs, CHANGE this default to your real ACR name.
+      ACR_NAME: ${{ github.event.inputs.acr_name || 'week08acr' }}
+      IMAGE_TAG: latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    # Azure login using a Service Principal secret
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # Login to Azure Container Registry (ACR)
-    - name: Login to Azure Container Registry
-      run: az acr login --name ${{ env.ACR_LOGIN_SERVER }}
+      - name: Validate ACR name
+        run: |
+          if [ -z "${ACR_NAME}" ]; then
+            echo "ERROR: ACR_NAME is empty. Set the workflow input 'acr_name' or hardcode the env."
+            exit 1
+          fi
+          echo "ACR_NAME=${ACR_NAME}"
 
-    # Build and Push Docker image for Frontend
-    - name: Build and Push Frontend Image
-      run: |
-        docker build -t ${{ env.ACR_LOGIN_SERVER }}/frontend:latest ./frontend/
-        docker push ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+      - name: Resolve ACR login server
+        run: echo "LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)" >> $GITHUB_ENV
 
-    # Logout from Azure for security (runs even if image push fails)
-    - name: Logout from Azure
-      run: az logout
-      if: always()
+      - name: Login to Azure Container Registry
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Build & Push image
+        run: |
+          docker build -t "$LOGIN_SERVER/frontend:$IMAGE_TAG" ./frontend
+          docker push  "$LOGIN_SERVER/frontend:$IMAGE_TAG"
+
+      - name: Azure Logout
+        run: az logout
