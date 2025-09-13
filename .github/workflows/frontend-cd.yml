@@ -21,7 +21,7 @@ on:
         required: true
         default: 'week08rg'
       acr_name:
-        description: 'Name of Azure Container Registry (no .azurecr.io)'
+        description: 'Azure Container Registry NAME (no .azurecr.io)'
         required: true
         default: 'week08acr'
 
@@ -35,59 +35,4 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Resolve ACR login server
-        run: |
-          if [ -z "${ACR_NAME}" ]; then
-            echo "ACR_NAME is empty; check workflow inputs."
-            exit 1
-          fi
-          echo "LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)" >> $GITHUB_ENV
-
-      - name: Show resolved ACR
-        run: |
-          echo "ACR_NAME=$ACR_NAME"
-          echo "LOGIN_SERVER=$LOGIN_SERVER"
-
-      - name: Login to ACR
-        run: az acr login --name "$ACR_NAME"
-
-      - name: Inject Backend IPs into Frontend main.js
-        run: |
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g"   frontend/main.js
-          echo "--- main.js after injection ---"
-          tail -n +1 frontend/main.js | sed -n '1,80p'
-
-      - name: Build and Push Frontend Image
-        run: |
-          docker build -t "$LOGIN_SERVER/frontend:$IMAGE_TAG" ./frontend
-          docker push  "$LOGIN_SERVER/frontend:$IMAGE_TAG"
-
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ inputs.aks_resource_group }}
-          cluster-name: ${{ inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
-        run: |
-          set -e
-          if [ -f k8s/frontend.yaml ]; then
-            kubectl apply -f k8s/frontend.yaml
-          elif [ -f frontend.yaml ]; then
-            kubectl apply -f frontend.yaml
-          else
-            echo "No frontend manifest found."
-            find . -maxdepth 3 -name "*front*.*y*ml" -o -name "k8s" -print
-            exit 1
-          fi
-
-      - name: Azure Logout
-        run: az logout
+        uses:
