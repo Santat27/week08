@@ -1,4 +1,5 @@
 name: CD - Deploy Frontend to AKS
+
 on:
   workflow_dispatch:
     inputs:
