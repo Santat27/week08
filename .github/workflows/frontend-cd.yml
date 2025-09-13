@@ -83,7 +83,6 @@ jobs:
         run: |
           docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest ./frontend/
           docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}/frontend:latest
-        run: |
           docker build -t $LOGIN_SERVER/frontend:latest ./frontend
           docker push  $LOGIN_SERVER/frontend:latest
       
