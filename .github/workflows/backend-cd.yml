@@ -90,6 +90,19 @@ jobs:
         shell: bash
         run: kubectl get svc --namespace "$BACKEND_NS"
 
+      - name: Debug services and events
+        shell: bash
+        run: |
+         echo "Namespace = ${BACKEND_NS:-default}"
+         echo "== Services (wide) =="
+         kubectl get svc --namespace "${BACKEND_NS:-default}" -o wide || true
+         echo "== Describe product-service =="
+         kubectl describe svc product-service --namespace "${BACKEND_NS:-default}" || true
+         echo "== Describe order-service =="
+         kubectl describe svc order-service --namespace "${BACKEND_NS:-default}" || true
+         echo "== Recent events =="
+         kubectl get events --namespace "${BACKEND_NS:-default}" --sort-by=.lastTimestamp | tail -n 60 || true
+
       - name: Wait for Backend LoadBalancer IPs
         id: wait_ips
         shell: bash
