@@ -71,34 +71,34 @@ jobs:
           kubectl apply -f secrets.yaml
           kubectl apply -f product-db.yaml
           kubectl apply -f order-db.yaml
+          env:
+           BACKEND_NS: week08
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
-          echo "Deploying backend microservices..."
-          cd k8s/
-          kubectl apply -f product-service.yaml
-          kubectl apply -f order-service.yaml
+          kubectl apply -n $BACKEND_NS -f k8s/product-service.yaml
+          kubectl apply -n $BACKEND_NS -f k8s/order-service.yaml
       
       - name: Wait for Backend LoadBalancer IPs
         run: |
-          set -e
-          echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
-          for i in {1..60}; do
-           PRODUCT_IP=$(kubectl -n week08 get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-           ORDER_IP=$(kubectl  -n week08 get svc order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-           if [ -n "$PRODUCT_IP" ] && [ -n "$ORDER_IP" ]; then
-             echo "Product IP: $PRODUCT_IP"
-             echo "Order IP:   $ORDER_IP"
+          id: wait_ips
+          run: |
+           set -e
+           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
+           for i in {1..60}; do
+            PRODUCT_IP=$(kubectl -n $BACKEND_NS get svc product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            ORDER_IP=$(kubectl  -n $BACKEND_NS get svc order-service  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$PRODUCT_IP" ] && [ -n "$ORDER_IP" ]; then
              echo "product_ip=$PRODUCT_IP" >> $GITHUB_OUTPUT
              echo "order_ip=$ORDER_IP"     >> $GITHUB_OUTPUT
              exit 0
-           fi
-           echo "Attempt $i/60 to get IPs..."
-           sleep 5
+            fi
+            echo "Attempt $i/60 to get IPs..."
+            sleep 5
           done
           echo "Timed out waiting for LoadBalancer IPs"
           exit 1
-
+          
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
