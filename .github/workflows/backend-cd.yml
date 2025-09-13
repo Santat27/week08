@@ -71,8 +71,9 @@ jobs:
           kubectl apply -f secrets.yaml
           kubectl apply -f product-db.yaml
           kubectl apply -f order-db.yaml
-          env:
-           BACKEND_NS: week08
+
+          echo "PRODUCT_DB_SERVICE=product-db-service-w08e1" >> $GITHUB_ENV
+          echo "ORDER_DB_SERVICE=order-db-service-w08e1"     >> $GITHUB_ENV
 
       - name: Deploy Backend Microservices (Product, Order)
         run: |
