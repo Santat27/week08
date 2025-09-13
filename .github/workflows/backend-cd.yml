@@ -81,33 +81,23 @@ jobs:
       
       - name: Wait for Backend LoadBalancer IPs
         run: |
+          set -e
           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
-          PRODUCT_IP=""
-          ORDER_IP=""
-          
-          for i in $(seq 1 60); do
-            echo "Attempt $i/60 to get IPs..."
-            PRODUCT_IP=$(kubectl get service product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            ORDER_IP=$(kubectl get service order-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "All backend LoadBalancer IPs assigned!"
-              echo "Product Service IP: $PRODUCT_IP"
-              echo "Order Service IP: $ORDER_IP"
-              break
-            fi
-            sleep 5 # Wait 5 seconds before next attempt
+          for i in {1..60}; do
+           PRODUCT_IP=$(kubectl -n week08 get svc product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+           ORDER_IP=$(kubectl  -n week08 get svc order-service-w08e1   -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+           if [ -n "$PRODUCT_IP" ] && [ -n "$ORDER_IP" ]; then
+             echo "Product IP: $PRODUCT_IP"
+             echo "Order IP:   $ORDER_IP"
+             echo "product_ip=$PRODUCT_IP" >> $GITHUB_OUTPUT
+             echo "order_ip=$ORDER_IP"     >> $GITHUB_OUTPUT
+             exit 0
+           fi
+           echo "Attempt $i/60 to get IPs..."
+           sleep 5
           done
-          
-          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
-            exit 1 # Fail the job if IPs are not obtained
-          fi
-          
-          # These are environment variables for subsequent steps in the *same job*
-          # And used to set the job outputs
-          echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
-          echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
+          echo "Timed out waiting for LoadBalancer IPs"
+          exit 1
 
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
