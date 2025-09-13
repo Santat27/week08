@@ -6,11 +6,11 @@ on:
       product_api_ip:
         description: 'External IP of Product Service (e.g., http://X.X.X.X:8000)'
         required: true
-        default: 'http://4.254.42.88:8000'
+        default: 'http://<ip_address>:8000'
       order_api_ip:
         description: 'External IP of Order Service (e.g., http://Y.Y.Y.Y:8001)'
         required: true
-        default: 'http://4.237.219.29:8001'
+        default: 'http://<ip_address>:8001'
       aks_cluster_name:
         description: 'Name of the AKS Cluster to deploy to'
         required: true
@@ -49,12 +49,10 @@ jobs:
           echo "PRODUCT_API=${PRODUCT_API}"
           echo "ORDER_API=${ORDER_API}"
           echo "ACR_NAME=${ACR_NAME}"
-          for v in PRODUCT_API ORDER_API ACR_NAME; do
-            if [ -z "$(eval echo \$$v)" ]; then
-              echo "ERROR: $v is empty."
-              exit 1
-            fi
-          done
+          if [ -z "${ACR_NAME}" ]; then
+           echo "ERROR: ACR_NAME is empty. In 'Run workflow', set 'acr_name' (e.g., week08xyzacr)."
+           exit 1
+          fi
 
       - name: Resolve ACR login server
         run: echo "LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)" >> $GITHUB_ENV
