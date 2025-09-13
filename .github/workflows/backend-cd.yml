@@ -20,7 +20,9 @@ jobs:
   deploy_backend:
     runs-on: ubuntu-latest
     environment: Production
-    
+    env:
+      BACKEND_NS: week08
+      
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
