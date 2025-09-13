@@ -87,12 +87,13 @@ jobs:
          kubectl apply --namespace "$BACKEND_NS" --filename k8s/order-service.yaml
 
       - name: List services in namespace (verify)
-        run: kubectl -n $BACKEND_NS get svc
-      
+        shell: bash
+        run: kubectl get svc --namespace "$BACKEND_NS"
+
       - name: Wait for Backend LoadBalancer IPs
+        id: wait_ips
+        shell: bash
         run: |
-          id: wait_ips
-          run: |
            set -e
            echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
            for i in {1..60}; do
@@ -105,9 +106,9 @@ jobs:
             fi
             echo "Attempt $i/60 to get IPs..."
             sleep 5
-          done
-          echo "Timed out waiting for LoadBalancer IPs"
-          exit 1
+           done
+           echo "Timed out waiting for LoadBalancer IPs"
+           exit 1
           
       - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
