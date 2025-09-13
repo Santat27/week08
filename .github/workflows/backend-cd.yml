@@ -1,6 +1,6 @@
 name: CD - Deploy Backend Services to AKS
-on:
 
+on:
   workflow_dispatch:
     inputs:
       aks_cluster_name:
@@ -22,10 +22,9 @@ jobs:
     environment: Production
     env:
       BACKEND_NS: week08
-      PRODUCT_SVC: product-service  
+      PRODUCT_SVC: product-service   # API service (not the DB svc)
       ORDER_SVC:   order-service
-      
-    # Use outputs produced by the wait step
+
     outputs:
       PRODUCT_API_IP: ${{ steps.wait_ips.outputs.product_ip }}
       ORDER_API_IP:   ${{ steps.wait_ips.outputs.order_ip }}
@@ -57,22 +56,18 @@ jobs:
           set -e
           ACR_ID=$(az acr show -n "${{ github.event.inputs.aks_acr_name }}" --query id -o tsv)
 
-          # Try Managed Identity (most AKS clusters)
           KUBE_OID=$(az aks show \
             -g "${{ github.event.inputs.aks_resource_group }}" \
             -n "${{ github.event.inputs.aks_cluster_name }}" \
             --query "identityProfile.kubeletidentity.objectId" -o tsv 2>/dev/null || true)
 
           if [ -n "$KUBE_OID" ] && [ "$KUBE_OID" != "null" ]; then
-            echo "Granting AcrPull to kubelet identity: $KUBE_OID"
             az role assignment create --assignee-object-id "$KUBE_OID" --role AcrPull --scope "$ACR_ID"
           else
-            # Fallback: legacy SP-based cluster
             SP_APPID=$(az aks show \
               -g "${{ github.event.inputs.aks_resource_group }}" \
               -n "${{ github.event.inputs.aks_cluster_name }}" \
               --query "servicePrincipalProfile.clientId" -o tsv)
-            echo "Granting AcrPull to cluster SP: $SP_APPID"
             az role assignment create --assignee "$SP_APPID" --role AcrPull --scope "$ACR_ID"
           fi
 
@@ -97,44 +92,33 @@ jobs:
           echo "== Names and types =="
           kubectl -n "$BACKEND_NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.type}{"\n"}{end}'
 
-            - name: Wait for Backend LoadBalancer IPs
+      - name: Wait for Backend LoadBalancer IPs
         id: wait_ips
         run: |
           set -e
           echo "Waiting up to 10 minutes for External IPs on $PRODUCT_SVC and $ORDER_SVC..."
-
-          # Sanity: show types so we can confirm these are LoadBalancer
-          echo "== Services (name/type) in $BACKEND_NS =="
-          kubectl -n "$BACKEND_NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.type}{"\n"}{end}'
-
           for i in {1..120}; do
             PIP=$(kubectl -n "$BACKEND_NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             OIP=$(kubectl -n "$BACKEND_NS" get svc "$ORDER_SVC"  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-
-            # Some AKS return hostname instead of ip
             [ -z "$PIP" ] && PIP=$(kubectl -n "$BACKEND_NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             [ -z "$OIP" ] && OIP=$(kubectl -n "$BACKEND_NS" get svc "$ORDER_SVC"  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-
             if [ -n "$PIP" ] && [ -n "$OIP" ]; then
               echo "product_ip=$PIP" >> $GITHUB_OUTPUT
               echo "order_ip=$OIP"   >> $GITHUB_OUTPUT
               echo "PRODUCT_IP=$PIP" >> $GITHUB_ENV
               echo "ORDER_IP=$OIP"   >> $GITHUB_ENV
-              echo "✅ Product IP: $PIP | Order IP: $OIP"
+              echo "Product IP: $PIP | Order IP: $OIP"
               exit 0
             fi
             echo "Attempt $i/120… still waiting."
             sleep 5
           done
-
           echo "Timed out waiting for LoadBalancer IPs"
           echo "=== Describe $PRODUCT_SVC ==="
           kubectl -n "$BACKEND_NS" describe svc "$PRODUCT_SVC" || true
           echo "=== Describe $ORDER_SVC ==="
           kubectl -n "$BACKEND_NS" describe svc "$ORDER_SVC"  || true
           exit 1
-
-           
 
       - name: Azure Logout
         run: az logout
