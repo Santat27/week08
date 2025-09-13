@@ -1,9 +1,9 @@
 # week08/k8s/order-service.yaml
-
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: order-service-w08e1 # Deployment name matches
+  name: order-service-w08e1
+  namespace: week08                               # <— add your namespace
   labels:
     app: order-service
 spec:
@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: order-service-container
-        image: durgeshsamariya.azurecr.io/order_service:latest
+        image: week08acr.azurecr.io/order_service:latest   # <— use your ACR image
         imagePullPolicy: Always
         ports:
         - containerPort: 8000
@@ -40,16 +40,24 @@ spec:
             secretKeyRef:
               name: ecomm-secrets-w08e1
               key: POSTGRES_PASSWORD
+
+        # Option A (recommended): point directly to the internal DNS of product-service
         - name: PRODUCT_SERVICE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: ecomm-config-w08e1
-              key: PRODUCT_SERVICE_URL
+          value: http://product-service-w08e1.week08.svc.cluster.local:8000
+
+        # Option B (if you prefer ConfigMap): keep the next block and
+        # update the ConfigMap key to the same internal URL instead.
+        # - name: PRODUCT_SERVICE_URL
+        #   valueFrom:
+        #     configMapKeyRef:
+        #       name: ecomm-config-w08e1
+        #       key: PRODUCT_SERVICE_URL
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: order-service-w08e1
+  namespace: week08                               # <— add your namespace
   labels:
     app: order-service
 spec:
@@ -57,6 +65,6 @@ spec:
     app: order-service
   ports:
     - protocol: TCP
-      port: 8001
-      targetPort: 8000
-  type: LoadBalancer
+      port: 8001          # service port (what other pods call)
+      targetPort: 8000    # containerPort above
+  type: ClusterIP          # <— change from LoadBalancer
