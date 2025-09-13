@@ -41,6 +41,11 @@ jobs:
         run: |
           az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
 
+      - name: Ensure namespace exists
+        run: |
+          kubectl get namespace "$BACKEND_NS" >/dev/null 2>&1 || \
+          kubectl create namespace "$BACKEND_NS"
+
       - name: Grant AcrPull to AKS kubelet identity (policy-safe)
         run: |
          set -e
