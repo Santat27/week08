@@ -31,7 +31,7 @@ jobs:
     env:
       PRODUCT_API: ${{ github.event.inputs.product_api_ip }}
       ORDER_API:   ${{ github.event.inputs.order_api_ip }}
-      ACR_NAME: week08acr
+      ACR_NAME:    ${{ github.event.inputs.acr_name }}   # maps input to env
       IMAGE_TAG:   latest
 
     steps:
@@ -43,17 +43,18 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # Validate/resolve ACR and compute LOGIN_SERVER
       - name: Resolve ACR name and login server
         run: |
           set -e
           echo "ACR_NAME(initial)='${ACR_NAME}'"
           if [ -z "${ACR_NAME}" ]; then
-            echo "No acr_name input provided; trying to auto-detect in the given resource group..."
+            echo "No acr_name provided; trying to auto-detect an ACR in the resource group..."
             RG="${{ github.event.inputs.aks_resource_group }}"
             ACR_NAME=$(az acr list -g "$RG" --query "[0].name" -o tsv)
           fi
           if [ -z "${ACR_NAME}" ]; then
-            echo "ERROR: Could not determine ACR name. Re-run the workflow and fill 'acr_name' (e.g., week08xyzacr — no .azurecr.io)."
+            echo "ERROR: Could not determine ACR name. Re-run and set 'acr_name' (e.g., week08xyzacr — no .azurecr.io)."
             exit 1
           fi
           echo "Using ACR_NAME='${ACR_NAME}'"
@@ -65,39 +66,7 @@ jobs:
           echo "ACR_NAME=$ACR_NAME"
           echo "LOGIN_SERVER=$LOGIN_SERVER"
 
-      - name: Login to ACR
+      - name: Login to Azure Container Registry
         run: az acr login --name "$ACR_NAME"
 
-      - name: Inject Backend IPs into Frontend main.js
-        run: |
-          sed -i "s|_PRODUCT_API_URL_|${PRODUCT_API}|g" frontend/main.js
-          sed -i "s|_ORDER_API_URL_|${ORDER_API}|g"   frontend/main.js
-          echo "--- main.js (first 60 lines) ---"
-          sed -n '1,60p' frontend/main.js
-
-      - name: Build and Push Frontend Image
-        run: |
-          docker build -t "$LOGIN_SERVER/frontend:$IMAGE_TAG" ./frontend
-          docker push  "$LOGIN_SERVER/frontend:$IMAGE_TAG"
-
-      - name: Set Kubernetes context (get AKS credentials)
-        uses: azure/aks-set-context@v3
-        with:
-          resource-group: ${{ github.event.inputs.aks_resource_group }}
-          cluster-name:   ${{ github.event.inputs.aks_cluster_name }}
-
-      - name: Deploy Frontend to AKS
-        run: |
-          set -e
-          if [ -f k8s/frontend.yaml ]; then
-            kubectl apply -f k8s/frontend.yaml
-          elif [ -f frontend.yaml ]; then
-            kubectl apply -f frontend.yaml
-          else
-            echo "No frontend manifest found."
-            find . -maxdepth 3 -name "*front*.*y*ml" -o -name "k8s" -print
-            exit 1
-          fi
-
-      - name: Azure Logout
-        run: az logout
+      - name: Inject Backend IPs into Frontend m
