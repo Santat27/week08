@@ -31,7 +31,7 @@ jobs:
     env:
       PRODUCT_API: ${{ github.event.inputs.product_api_ip }}
       ORDER_API:   ${{ github.event.inputs.order_api_ip }}
-      ACR_NAME:    ${{ github.event.inputs.acr_name }}
+      ACR_NAME: week08acr
       IMAGE_TAG:   latest
 
     steps:
