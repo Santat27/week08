@@ -22,16 +22,17 @@ jobs:
     environment: Production
     env:
       BACKEND_NS: week08
-      
+
+    # Use outputs produced by the wait step
     outputs:
-      PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
-      ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
+      PRODUCT_API_IP: ${{ steps.wait_ips.outputs.product_ip }}
+      ORDER_API_IP:   ${{ steps.wait_ips.outputs.order_ip }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Log in to Azure
+      - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
@@ -39,7 +40,10 @@ jobs:
 
       - name: Set Kubernetes context (get AKS credentials)
         run: |
-          az aks get-credentials --resource-group ${{ github.event.inputs.aks_resource_group }} --name ${{ github.event.inputs.aks_cluster_name }} --overwrite-existing
+          az aks get-credentials \
+            --resource-group "${{ github.event.inputs.aks_resource_group }}" \
+            --name "${{ github.event.inputs.aks_cluster_name }}" \
+            --overwrite-existing
 
       - name: Ensure namespace exists
         run: |
@@ -48,95 +52,98 @@ jobs:
 
       - name: Grant AcrPull to AKS kubelet identity (policy-safe)
         run: |
-         set -e
-         ACR_ID=$(az acr show -n ${{ inputs.aks_acr_name }} --query id -o tsv)
+          set -e
+          ACR_ID=$(az acr show -n "${{ github.event.inputs.aks_acr_name }}" --query id -o tsv)
 
-         # Try Managed Identity (most AKS clusters)
-         KUBE_OID=$(az aks show \
-          -g ${{ inputs.aks_resource_group }} \
-          -n ${{ inputs.aks_cluster_name }} \
-          --query "identityProfile.kubeletidentity.objectId" -o tsv 2>/dev/null || true)
+          # Try Managed Identity (most AKS clusters)
+          KUBE_OID=$(az aks show \
+            -g "${{ github.event.inputs.aks_resource_group }}" \
+            -n "${{ github.event.inputs.aks_cluster_name }}" \
+            --query "identityProfile.kubeletidentity.objectId" -o tsv 2>/dev/null || true)
 
-         if [ -n "$KUBE_OID" ] && [ "$KUBE_OID" != "null" ]; then
-          echo "Granting AcrPull to kubelet identity: $KUBE_OID"
-          az role assignment create --assignee-object-id "$KUBE_OID" --role AcrPull --scope "$ACR_ID"
-         else
-          # Fallback: legacy SP-based cluster
-          SP_APPID=$(az aks show \
-           -g ${{ inputs.aks_resource_group }} \
-           -n ${{ inputs.aks_cluster_name }} \
-           --query "servicePrincipalProfile.clientId" -o tsv)
-          echo "Granting AcrPull to cluster SP: $SP_APPID"
-          az role assignment create --assignee "$SP_APPID" --role AcrPull --scope "$ACR_ID"
-         fi
-          
-      - name: Deploy Backend Infrastructure (Namespace, ConfigMaps, Secrets, Databases)
+          if [ -n "$KUBE_OID" ] && [ "$KUBE_OID" != "null" ]; then
+            echo "Granting AcrPull to kubelet identity: $KUBE_OID"
+            az role assignment create --assignee-object-id "$KUBE_OID" --role AcrPull --scope "$ACR_ID"
+          else
+            # Fallback: legacy SP-based cluster
+            SP_APPID=$(az aks show \
+              -g "${{ github.event.inputs.aks_resource_group }}" \
+              -n "${{ github.event.inputs.aks_cluster_name }}" \
+              --query "servicePrincipalProfile.clientId" -o tsv)
+            echo "Granting AcrPull to cluster SP: $SP_APPID"
+            az role assignment create --assignee "$SP_APPID" --role AcrPull --scope "$ACR_ID"
+          fi
+
+      - name: Deploy Backend Infrastructure (namespace+configs+DBs)
         run: |
-          echo "Deploying backend infrastructure..."
-          cd k8s/
-          kubectl apply -f configmaps.yaml
-          kubectl apply -f secrets.yaml
-          kubectl apply -f product-db.yaml
-          kubectl apply -f order-db.yaml
-
-          echo "PRODUCT_DB_SERVICE=product-db-service-w08e1" >> $GITHUB_ENV
-          echo "ORDER_DB_SERVICE=order-db-service-w08e1"     >> $GITHUB_ENV
+          set -e
+          kubectl apply -f k8s/configmaps.yaml  --namespace "$BACKEND_NS"
+          kubectl apply -f k8s/secrets.yaml     --namespace "$BACKEND_NS"
+          kubectl apply -f k8s/product-db.yaml  --namespace "$BACKEND_NS"
+          kubectl apply -f k8s/order-db.yaml    --namespace "$BACKEND_NS"
 
       - name: Deploy Backend Microservices (Product, Order)
-        shell: bash
         run: |
-         set -e
-         # list files to confirm the path exists
-         ls -la
-         ls -la k8s || true
+          set -e
+          kubectl apply --namespace "$BACKEND_NS" --filename k8s/product-service.yaml
+          kubectl apply --namespace "$BACKEND_NS" --filename k8s/order-service.yaml
 
-         kubectl apply --namespace "$BACKEND_NS" --filename k8s/product-service.yaml
-         kubectl apply --namespace "$BACKEND_NS" --filename k8s/order-service.yaml
-
-      - name: List services in namespace (verify)
-        shell: bash
-        run: kubectl get svc --namespace "$BACKEND_NS"
-
-      - name: Debug services and events
-        shell: bash
+      - name: Debug svc names and types
         run: |
-         echo "Namespace = ${BACKEND_NS:-default}"
-         echo "== Services (wide) =="
-         kubectl get svc --namespace "${BACKEND_NS:-default}" -o wide || true
-         echo "== Describe product-service =="
-         kubectl describe svc product-service --namespace "${BACKEND_NS:-default}" || true
-         echo "== Describe order-service =="
-         kubectl describe svc order-service --namespace "${BACKEND_NS:-default}" || true
-         echo "== Recent events =="
-         kubectl get events --namespace "${BACKEND_NS:-default}" --sort-by=.lastTimestamp | tail -n 60 || true
+          echo "== Services in $BACKEND_NS =="
+          kubectl -n "$BACKEND_NS" get svc -o wide
+          echo "== Names and types =="
+          kubectl -n "$BACKEND_NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.type}{"\n"}{end}'
+
+      - name: Discover product/order service names
+        id: discover
+        run: |
+          PRODUCT_SVC=$(kubectl -n "$BACKEND_NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}' | tr ' ' '\n' | grep -E '^product' | head -n1)
+          ORDER_SVC=$(kubectl  -n "$BACKEND_NS" get svc -o jsonpath='{range .items[*]}{.metadata.name}{" "}{end}' | tr ' ' '\n' | grep -E '^order'   | head -n1)
+          echo "product_svc=$PRODUCT_SVC" >> $GITHUB_OUTPUT
+          echo "order_svc=$ORDER_SVC"     >> $GITHUB_OUTPUT
+          echo "Detected: product=$PRODUCT_SVC order=$ORDER_SVC"
 
       - name: Wait for Backend LoadBalancer IPs
         id: wait_ips
-        shell: bash
         run: |
-           set -e
-           echo "Waiting for Product, Order LoadBalancer IPs to be assigned (up to 5 minutes)..."
-           for i in {1..60}; do
-            PRODUCT_IP=$(kubectl -n $BACKEND_NS get svc product-service -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            ORDER_IP=$(kubectl  -n $BACKEND_NS get svc order-service  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-            if [ -n "$PRODUCT_IP" ] && [ -n "$ORDER_IP" ]; then
-             echo "product_ip=$PRODUCT_IP" >> $GITHUB_OUTPUT
-             echo "order_ip=$ORDER_IP"     >> $GITHUB_OUTPUT
-             exit 0
-            fi
-            echo "Attempt $i/60 to get IPs..."
-            sleep 5
-           done
-           echo "Timed out waiting for LoadBalancer IPs"
-           exit 1
-          
-      - name: Capture Product Service IP for Workflow Output
-        id: get_product_ip
-        run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
-      
-      - name: Capture Order Service IP for Workflow Output
-        id: get_order_ip
-        run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
+          set -e
+          PRODUCT_SVC="${{ steps.discover.outputs.product_svc }}"
+          ORDER_SVC="${{ steps.discover.outputs.order_svc }}"
 
-      - name: Logout from Azure
+          if [ -z "$PRODUCT_SVC" ] || [ -z "$ORDER_SVC" ]; then
+            echo "Could not detect product/order service names. Check your k8s/*.yaml 'metadata.name'."
+            exit 1
+          fi
+
+          echo "Waiting up to 10 minutes for External IPs..."
+          for i in {1..120}; do
+            PIP=$(kubectl -n "$BACKEND_NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            OIP=$(kubectl -n "$BACKEND_NS" get svc "$ORDER_SVC"  -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+
+            # Some clusters set hostname instead of ip
+            [ -z "$PIP" ] && PIP=$(kubectl -n "$BACKEND_NS" get svc "$PRODUCT_SVC" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            [ -z "$OIP" ] && OIP=$(kubectl -n "$BACKEND_NS" get svc "$ORDER_SVC"  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+            if [ -n "$PIP" ] && [ -n "$OIP" ]; then
+              echo "product_ip=$PIP" >> $GITHUB_OUTPUT
+              echo "order_ip=$OIP"   >> $GITHUB_OUTPUT
+              echo "PRODUCT_IP=$PIP" >> $GITHUB_ENV
+              echo "ORDER_IP=$OIP"   >> $GITHUB_ENV
+              echo "Product IP: $PIP | Order IP: $OIP"
+              exit 0
+            fi
+
+            echo "Attempt $i/120… still waiting."
+            sleep 5
+          done
+
+          echo "Timed out waiting for LoadBalancer IPs"
+          echo "=== Describe product svc ==="
+          kubectl -n "$BACKEND_NS" describe svc "$PRODUCT_SVC" || true
+          echo "=== Describe order svc ==="
+          kubectl -n "$BACKEND_NS" describe svc "$ORDER_SVC"  || true
+          exit 1
+
+      - name: Azure Logout
         run: az logout
