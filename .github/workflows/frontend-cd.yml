@@ -47,19 +47,15 @@ jobs:
         run: |
           set -e
           echo "ACR_NAME(initial)='${ACR_NAME}'"
-
           if [ -z "${ACR_NAME}" ]; then
             echo "No acr_name input provided; trying to auto-detect in the given resource group..."
-            # Try to find an ACR in the specified RG
             RG="${{ github.event.inputs.aks_resource_group }}"
             ACR_NAME=$(az acr list -g "$RG" --query "[0].name" -o tsv)
           fi
-
           if [ -z "${ACR_NAME}" ]; then
             echo "ERROR: Could not determine ACR name. Re-run the workflow and fill 'acr_name' (e.g., week08xyzacr — no .azurecr.io)."
             exit 1
           fi
-
           echo "Using ACR_NAME='${ACR_NAME}'"
           echo "ACR_NAME=${ACR_NAME}" >> $GITHUB_ENV
           echo "LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)" >> $GITHUB_ENV
